@@ -1,140 +1,281 @@
-#!/bin/bash
-#
-# Script For Building Android arm64 Kernel
+#!/usr/bin/env bash
 
-# Setup colour for the script
-yellow='\033[0;33m'
-white='\033[0m'
-red='\033[0;31m'
-green='\e[0;32m'
+ #
+ # Script For Building Android Kernel
+ #
 
-# Deleting out "kernel complied" and zip "anykernel" from an old compilation
-echo -e "$green << cleanup >> \n $white"
+##----------------------------------------------------------##
+# Specify Kernel Directory
+KERNEL_DIR="$(pwd)"
 
-rm -rf out
-rm -rf zip
-rm -rf error.log
+##----------------------------------------------------------##
+# Device Name and Model
+MODEL=Xiaomi
+DEVICE=vince
 
-echo -e "$green << setup dirs >> \n $white"
+# Kernel Version Code
+VERSION=
 
-# With that setup , the script will set dirs and few important thinks
+# Kernel Defconfig
+DEFCONFIG=${DEVICE}-perf_defconfig
 
-MY_DIR="${BASH_SOURCE%/*}"
-if [[ ! -d "$MY_DIR" ]]; then MY_DIR="$PWD"; fi
- 
-# MIUI = High Dimens
-# OSS = Low Dimens
+# Select LTO variant ( Full LTO by default )
+DISABLE_LTO=0
+THIN_LTO=0
 
-#export CHATID API_BOT TYPE_KERNEL
+# Files
+IMAGE=$(pwd)/out/arch/arm64/boot/Image.gz-dtb
+#DTBO=$(pwd)/out/arch/arm64/boot/dtbo.img
+#DTB=$(pwd)/out/arch/arm64/boot/dts/qcom
 
-# Kernel build config
-TYPE="VINCE"
-KERNEL_NAME="SUPER.KERNEL"
-KERNEL_NAME_ALIAS="Kernulvin-$(date +"%d-%m-%Y").zip"
-DEVICE="Redmi 5 Plus"
-DEFCONFIG="vince-perf_defconfig"
-AnyKernel="https://github.com/missgoin/Anykernel3"
-AnyKernelbranch="master"
-HOSST="Pancali"
-USEER="unknown"
-ID="02"
-MESIN="Git Workflows"
+# Verbose Build
+VERBOSE=0
 
-# clang config
-REMOTE="https://gitlab.com"
-TARGET="GhostMaster69-dev"
-REPO="cosmic-clang"
-BRANCH="master"
+# Kernel Version
+KERVER=$(make kernelversion)
 
-#REMOTE="https://gitlab.com"
-#TARGET="Panchajanya1999"
-#REPO="azure-clang"
-#BRANCH="main"
-#git clone --depth=1  https://gitlab.com/Panchajanya1999/azure-clang.git clang
+COMMIT_HEAD=$(git log --oneline -1)
 
-# setup telegram env
-export WAKTU=$(date +"%T")
-export TGL=$(date +"%d-%m-%Y")
+# Date and Time
+DATE=$(TZ=Asia/Jakarta date +"%Y%m%d-%T")
+TANGGAL=$(date +"%F%S")
 
-# clang stuff
-echo -e "$green << cloning clang >> \n $white"
-	git clone --depth=1 -b "$BRANCH" "$REMOTE"/"$TARGET"/"$REPO" "$HOME"/clang
+# Specify Final Zip Name
+ZIPNAME=SUPER.KERNEL
+FINAL_ZIP=${ZIPNAME}-${DEVICE}-${TANGGAL}.zip
+FINAL_ZIP_ALIAS=Karenulvin-${TANGGAL}.zip
+
+##----------------------------------------------------------##
+# Specify compiler.
+
+COMPILER=cosmic
+
+##----------------------------------------------------------##
+# Specify Linker
+LINKER=ld.lld
+
+##----------------------------------------------------------##
+
+##----------------------------------------------------------##
+# Clone ToolChain
+function cloneTC() {
+
+	if [ $COMPILER = "atomx" ];
+	then
+	git clone --depth=1 https://gitlab.com/ElectroPerf/atom-x-clang.git clang
+	PATH="${KERNEL_DIR}/clang/bin:$PATH"
+
+    elif [ $COMPILER = "neutron" ];
+    then
+    git clone --depth=1 https://gitlab.com/dakkshesh07/neutron-clang.git clang
+    PATH="${KERNEL_DIR}/clang/bin:$PATH"
+    
+    elif [ $COMPILER = "trb" ];
+    then
+    git clone --depth=1 https://gitlab.com/varunhardgamer/trb_clang.git clang
+    PATH="${KERNEL_DIR}/clang/bin:$PATH"
+    
+    elif [ $COMPILER = "cosmic" ];
+    then
+    git clone --depth=1 https://gitlab.com/PixelOS-Devices/playgroundtc.git -b 17 cosmic
+    PATH="${KERNEL_DIR}/cosmic/bin:$PATH"
+    
+	elif [ $COMPILER = "azure" ];
+	then
+	git clone --depth=1 https://gitlab.com/Panchajanya1999/azure-clang clang
+	PATH="${KERNEL_DIR}/clang/bin:$PATH"
+
+	elif [ $COMPILER = "proton" ];
+	then
+	git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
+	PATH="${KERNEL_DIR}/clang/bin:$PATH"
+
+	elif [ $COMPILER = "eva" ];
+	then
+	git clone --depth=1 https://github.com/mvaisakh/gcc-arm64.git -b gcc-new gcc64
+	git clone --depth=1 https://github.com/mvaisakh/gcc-arm.git -b gcc-new gcc32
+	PATH=$KERNEL_DIR/gcc64/bin/:$KERNEL_DIR/gcc32/bin/:/usr/bin:$PATH
+
+	elif [ $COMPILER = "aosp" ];
+	then
+        mkdir aosp-clang
+        cd aosp-clang || exit
+	wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r450784b.tar.gz
+        tar -xf clang*
+        cd .. || exit
+	git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git --depth=1 gcc
+	git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git  --depth=1 gcc32
+	PATH="${KERNEL_DIR}/aosp-clang/bin:${KERNEL_DIR}/gcc/bin:${KERNEL_DIR}/gcc32/bin:${PATH}"
+	fi
 	
-        export PATH="$HOME/clang/bin:$PATH"
-        export KBUILD_COMPILER_STRING=$("$HOME"/clang/bin/clang --version | head -n 1 | sed -e 's/  */ /g' -e 's/[[:space:]]*$//' -e 's/^.*clang/clang/')
-        #export KBUILD_COMPILER_STRING=$("$HOME"/clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
+    # Clone AnyKernel
+    git clone --depth=1 https://github.com/missgoin/AnyKernel3.git
 
-# Setup build process
+	}
 
-build_kernel() {
-Start=$(date +"%s")
 
-	make -j$(nproc --all) O=out \
-                              ARCH=arm64 \
-                              LLVM=1 \
-                              LLVM_IAS=1 \
-                              CC=clang \
-                              CROSS_COMPILE=aarch64-linux-gnu- \
-                              CROSS_COMPILE_ARM32=arm-linux-gnueabi-  2>&1 | tee error.log
+##------------------------------------------------------##
+# Export Variables
+function exports() {
+	
+        # Export KBUILD_COMPILER_STRING
+        if [ -d ${KERNEL_DIR}/clang ];
+           then
+               export KBUILD_COMPILER_STRING=$(${KERNEL_DIR}/clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
+               export LD_LIBRARY_PATH="${KERNEL_DIR}/clang/lib:$LD_LIBRARY_PATH"
+        elif [ -d ${KERNEL_DIR}/gcc64 ];
+           then
+               export KBUILD_COMPILER_STRING=$("$KERNEL_DIR/gcc64"/bin/aarch64-elf-gcc --version | head -n 1)       
+        elif [ -d ${KERNEL_DIR}/cosmic ];
+           then
+               export KBUILD_COMPILER_STRING=$(${KERNEL_DIR}/cosmic/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')        
+        elif [ -d ${KERNEL_DIR}/aosp-clang ];
+            then
+               export KBUILD_COMPILER_STRING=$(${KERNEL_DIR}/aosp-clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
+        fi
+        
+        # Export ARCH and SUBARCH
+        export ARCH=arm64
+        export SUBARCH=arm64
+        
+        # Export Local Version
+        #export LOCALVERSION="-${VERSION}"
+        
+        # KBUILD HOST and USER
+        export KBUILD_BUILD_HOST=Pancali
+        export KBUILD_BUILD_USER="unknown"
+        
+	    export PROCS=$(nproc --all)
+	    export DISTRO=$(source /etc/os-release && echo "${NAME}")
+	
+	}
+        
+##----------------------------------------------------------------##
+# Telegram Bot Integration
+##----------------------------------------------------------------##
 
-End=$(date +"%s")
-Diff=$(($End - $Start))
+# Export Configs
+function configs() {
+    if [ -d ${KERNEL_DIR}/clang ] || [ -d ${KERNEL_DIR}/aosp-clang  ] || [ -d ${KERNEL_DIR}/cosmic  ]; then
+       if [ $DISABLE_LTO = "1" ]; then
+          sed -i 's/CONFIG_LTO_CLANG=y/# CONFIG_LTO_CLANG is not set/' arch/arm64/configs/${DEFCONFIG}
+          sed -i 's/CONFIG_LTO=y/# CONFIG_LTO is not set/' arch/arm64/configs/${DEFCONFIG}
+          sed -i 's/# CONFIG_LTO_NONE is not set/CONFIG_LTO_NONE=y/' arch/arm64/configs/${DEFCONFIG}
+       elif [ $THIN_LTO = "1" ]; then
+          sed -i 's/# CONFIG_THINLTO is not set/CONFIG_THINLTO=y/' arch/arm64/configs/${DEFCONFIG}
+       fi
+    elif [ -d ${KERNEL_DIR}/gcc64 ]; then
+       sed -i 's/CONFIG_LLVM_POLLY=y/# CONFIG_LLVM_POLLY is not set/' arch/arm64/configs/${DEFCONFIG}
+       sed -i 's/# CONFIG_GCC_GRAPHITE is not set/CONFIG_GCC_GRAPHITE=y/' arch/arm64/configs/${DEFCONFIG}
+       if ! [ $DISABLE_LTO = "1" ]; then
+          sed -i 's/# CONFIG_LTO_GCC is not set/CONFIG_LTO_GCC=y/' arch/arm64/configs/${DEFCONFIG}
+       fi
+    fi
 }
 
-# Let's start
-echo -e "$green << doing pre-compilation process >> \n $white"
-export ARCH=arm64
-export SUBARCH=arm64
-export HEADER_ARCH=arm64
+# Speed up build process
+MAKE="./makeparallel"
 
-export KBUILD_BUILD_HOST="$HOSST"
-export KBUILD_BUILD_USER="$USEER"
-export KBUILD_BUILD_VERSION="$ID"
 
-mkdir -p out
-
-make O=out clean && make O=out mrproper
-make ARCH=arm64 O=out "$DEFCONFIG" LLVM=1 LLVM_IAS=1
-
-echo -e "$yellow << compiling the kernel >> \n $white"
-
-build_kernel || error=true
-
-DATE=$(date +"%Y%m%d-%H%M%S")
-KERVER=$(make kernelversion)
-KOMIT=$(git log --pretty=format:'"%h : %s"' -1)
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-export IMG="$MY_DIR"/out/arch/arm64/boot/Image.gz-dtb
-#export dtbo="$MY_DIR"/out/arch/arm64/boot/dtbo.img
-#export dtb="$MY_DIR"/out/arch/arm64/boot/dtb.img
-
-        if [ -f "$IMG" ]; then
-                echo -e "$green << selesai dalam $(($Diff / 60)) menit and $(($Diff % 60)) detik >> \n $white"
-        else
-                echo -e "$red << Gagal dalam membangun kernel!!! , cek kembali kode anda >>$white"
-                rm -rf out
-                rm -rf testing.log
-                rm -rf error.log
-                exit 1
-        fi
-
-        if [ -f "$IMG" ]; then
-                echo -e "$green << cloning AnyKernel from your repo >> \n $white"
-                git clone --depth=1 "$AnyKernel" --single-branch -b "$AnyKernelbranch" zip
-                echo -e "$yellow << making kernel zip >> \n $white"
-                cp -r "$IMG" zip/
-                cd zip
-                export ZIP="$KERNEL_NAME_ALIAS"
-		zip -r9 "$ZIP" * -x .git README.md LICENSE *placeholder
-		echo "Zip: $ZIP"
-                curl -T $ZIP https://oshi.at; echo
+##----------------------------------------------------------##
+# Compilation
+function compile() {
+START=$(date +"%s")
 		
-                cd ..
-                rm -rf error.log
-                rm -rf out
-                rm -rf zip
-                rm -rf testing.log
-				
-                exit
-        fi
+	# Compile
+	make O=out ARCH=arm64 ${DEFCONFIG}
+	if [ -d ${KERNEL_DIR}/clang ];
+	   then
+	       make -kj$(nproc --all) O=out \
+	       ARCH=arm64 \
+	       CC=clang \
+	       HOSTCC=clang \
+	       HOSTCXX=clang++ \
+	       CROSS_COMPILE=aarch64-linux-gnu- \
+	       CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+	       LLVM=1 \
+	       #LLVM_IAS=1 \
+	       #LD=${LINKER} \
+	       AR=llvm-ar \
+	       NM=llvm-nm \
+	       OBJCOPY=llvm-objcopy \
+	       OBJDUMP=llvm-objdump \
+	       STRIP=llvm-strip \
+	       READELF=llvm-readelf \
+	       OBJSIZE=llvm-size \
+	       V=$VERBOSE 2>&1 | tee error.log
+	elif [ -d ${KERNEL_DIR}/cosmic ];
+	   then
+	       make -j$(nproc --all) O=out \
+	       ARCH=arm64 \
+	       CC=clang \
+           CROSS_COMPILE=aarch64-linux-gnu- \
+           CROSS_COMPILE_ARM32=arm-linux-gnueabi \
+           LLVM=1 \
+           LLVM_IAS=1 \
+           AR=llvm-ar \
+           NM=llvm-nm \
+           LD=${LINKER} \
+           OBJCOPY=llvm-objcopy \
+           OBJDUMP=llvm-objdump \
+           STRIP=llvm-strip \
+	       V=$VERBOSE 2>&1 | tee error.log
+	elif [ -d ${KERNEL_DIR}/gcc64 ];
+	   then
+	       make -kj$(nproc --all) O=out \
+	       ARCH=arm64 \
+	       CROSS_COMPILE_ARM32=arm-eabi- \
+	       CROSS_COMPILE=aarch64-elf- \
+	       LD=aarch64-elf-${LINKER} \
+	       AR=llvm-ar \
+	       NM=llvm-nm \
+	       OBJCOPY=llvm-objcopy \
+	       OBJDUMP=llvm-objdump \
+	       STRIP=llvm-strip \
+	       OBJSIZE=llvm-size \
+	       V=$VERBOSE 2>&1 | tee error.log
+    elif [ -d ${KERNEL_DIR}/aosp-clang ];
+       then
+           make -kj$(nproc --all) O=out \
+	       ARCH=arm64 \
+	       CC=clang \
+           HOSTCC=clang \
+	       HOSTCXX=clang++ \
+	       CLANG_TRIPLE=aarch64-linux-gnu- \
+	       CROSS_COMPILE=aarch64-linux-android- \
+	       CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+	       LD=${LINKER} \
+	       AR=llvm-ar \
+	       NM=llvm-nm \
+	       OBJCOPY=llvm-objcopy \
+	       OBJDUMP=llvm-objdump \
+           STRIP=llvm-strip \
+	       READELF=llvm-readelf \
+	       OBJSIZE=llvm-size \
+	       V=$VERBOSE 2>&1 | tee error.log
+	fi
+}
+
+##----------------------------------------------------------------##
+function zipping() {
+	# Copy Files To AnyKernel3 Zip
+	cp $IMAGE AnyKernel3
+	
+	# Zipping and Push Kernel
+	cd AnyKernel3 || exit 1
+        zip -r9 ${FINAL_ZIP_ALIAS} *
+        MD5CHECK=$(md5sum "$FINAL_ZIP_ALIAS" | cut -d' ' -f1)
+        echo "Zip: $FINAL_ZIP_ALIAS"
+        curl -T $FINAL_ZIP_ALIAS https://oshi.at; echo
+    cd ..
+}
+    
+##----------------------------------------------------------##
+
+cloneTC
+exports
+configs
+compile
+zipping
+
+##----------------*****-----------------------------##
