@@ -48,7 +48,7 @@ FINAL_ZIP_ALIAS=Karenulvin-${TANGGAL}.zip
 ##----------------------------------------------------------##
 # Specify compiler.
 
-COMPILER=azure
+COMPILER=cosmic
 
 ##----------------------------------------------------------##
 # Specify Linker
@@ -210,7 +210,7 @@ START=$(date +"%s")
            CROSS_COMPILE=aarch64-linux-gnu- \
            CROSS_COMPILE_ARM32=arm-linux-gnueabi \
            LLVM=1 \
-           LLVM_IAS=1 \
+           #LLVM_IAS=1 \
            AR=llvm-ar \
            NM=llvm-nm \
            LD=${LINKER} \
