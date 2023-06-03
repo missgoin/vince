@@ -214,7 +214,7 @@ static inline u32 task_sid(const struct task_struct *task)
 /*
  * get the subjective security ID of the current task
  */
-static inline u32 current_sid(void)
+u32 current_sid(void)
 {
 	const struct task_security_struct *tsec = current_security();
 
@@ -2322,14 +2322,13 @@ static int check_nnp_nosuid(const struct linux_binprm *bprm,
 			    const struct task_security_struct *old_tsec,
 			    const struct task_security_struct *new_tsec)
 {
-	//static u32 ksu_sid;
-	//char *secdata;
+	static u32 ksu_sid;
+	char *secdata;
 	int nnp = (bprm->unsafe & LSM_UNSAFE_NO_NEW_PRIVS);
 	int nosuid = !mnt_may_suid(bprm->file->f_path.mnt);
-	int rc;
-	//int rc,error;
-	//u32 seclen;
-	u32 av;
+	//int rc;
+	int rc,error;
+	u32 seclen;
 	
 	if (!nnp && !nosuid)
 		return 0; /* neither NNP nor nosuid */
@@ -2337,6 +2336,17 @@ static int check_nnp_nosuid(const struct linux_binprm *bprm,
 	if (new_tsec->sid == old_tsec->sid)
 		return 0; /* No change in credentials */
 		
+	if(!ksu_sid){
+		security_secctx_to_secid("u:r:su:s0", strlen("u:r:su:s0"), &ksu_sid);
+	}
+	error = security_secid_to_secctx(old_tsec->sid, &secdata, &seclen);
+	if (!error) {
+		rc = strcmp("u:r:init:s0",secdata);
+		security_release_secctx(secdata, seclen);
+		if(rc == 0 && new_tsec->sid == ksu_sid){
+			return 0;
+		}
+	}
 
 	/*
 	 * If the policy enables the nnp_nosuid_transition policy capability,
@@ -2344,35 +2354,30 @@ static int check_nnp_nosuid(const struct linux_binprm *bprm,
 	 * policy allows the corresponding permission between
 	 * the old and new contexts.
 	 */
-	if (selinux_policycap_nnp_nosuid_transition) {
-		av = 0;
-		if (nnp)
-			av |= PROCESS2__NNP_TRANSITION;
-		if (nosuid)
-			av |= PROCESS2__NOSUID_TRANSITION;
-		rc = avc_has_perm(old_tsec->sid, new_tsec->sid,
-				  SECCLASS_PROCESS2, av, NULL);
-		if (!rc)
-			return 0;
-	}
-
+	
+	
+	
 	/*
-	 * We also permit NNP or nosuid transitions to bounded SIDs,
-	 * i.e. SIDs that are guaranteed to only be allowed a subset
-	 * of the permissions of the current SID.
+	 * The only transitions we permit under NNP or nosuid
+	 * are transitions to bounded SIDs, i.e. SIDs that are
+	 * guaranteed to only be allowed a subset of the permissions
+	 * of the current SID.
 	 */
 	rc = security_bounded_transition(old_tsec->sid, new_tsec->sid);
-	if (!rc)
-		return 0;
+	if (rc) {
+		/*
+		 * On failure, preserve the errno values for NNP vs nosuid.
+		 * NNP:  Operation not permitted for caller.
+		 * nosuid:  Permission denied to file.
+		 */
+		if (nnp)
+			return -EPERM;
+		else
+			return -EACCES;
+	}
+	return 0;
+	
 
-	/*
-	 * On failure, preserve the errno values for NNP vs nosuid.
-	 * NNP:  Operation not permitted for caller.
-	 * nosuid:  Permission denied to file.
-	 */
-	if (nnp)
-		return -EPERM;
-	return -EACCES;
 }
 
 static int selinux_bprm_set_creds(struct linux_binprm *bprm)
